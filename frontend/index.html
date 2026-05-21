@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Live Barcode Scanner</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script src="https://unpkg.com/html5-qrcode"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+    }
+
+    h2 {
+      margin-bottom: 10px;
+    }
+
+    #reader {
+      width: 100%;
+      max-width: 420px;
+      margin-bottom: 20px;
+    }
+
+    #result, #productInfo {
+      margin-top: 15px;
+      padding: 10px;
+      border: 1px solid #ccc;
+      max-width: 420px;
+      word-wrap: break-word;
+    }
+
+    .ok {
+      color: green;
+      font-weight: bold;
+    }
+
+    .err {
+      color: red;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <h2>Live Barcode Scanner</h2>
+
+<div id="purchaseBox" style="margin-bottom:15px; padding:10px; border:1px solid #ccc; max-width:420px;">
+  <h3>Purchase Session</h3>
+
+  <label>Store:</label><br>
+  <select id="store_id">
+    <option value="1">Walmart</option>
+    <option value="2">Soriana</option>
+    <option value="3">HEB</option>
+    <option value="4">Costco</option>
+    <option value="5">Sams</option>
+    <option value="6">LaComer</option>
+  </select><br><br>
+
+  <label>Receipt number:</label><br>
+  <input id="receipt_number" placeholder="Optional receipt number"><br><br>
+
+  <button onclick="startPurchase()">Start Purchase</button>
+  <br><br>
+  <button onclick="finishPurchase()">Finish Purchase</button>
+
+  <p><strong>Current purchase ID:</strong> <span id="currentPurchaseDisplay">None</span></p>
+</div>
+
+
+  <div id="reader"></div>
+<div style="margin-top:10px;">
+  <input id="manualBarcode"
+         placeholder="Enter barcode manually"
+         onekyedown="handleBarcodekey(event)">
+  <button onclick="lookupManualBarcode()">Lookup Barcode</button>
+</div>
+
+  <div id="result">Waiting for scan...</div>
+  <div id="productInfo">
+  No product loaded yet.
+</div>
+
+<h3>Purchase Items</h3>
+<div id="purchaseItems">
+No items yet.
+</div>
+
+<h3>Non-Barcode Item</h3>
+
+<input id="nb_name" placeholder="Product name"><br><br>
+<input id="nb_category" placeholder="Category"><br><br>
+<input id="nb_qty" placeholder="Quantity" value="1"><br><br>
+<input id="nb_price" placeholder="Unit price"><br><br>
+
+<button onclick="addNonBarcodeItem()">Add Non-Barcode Item</button>
+
+
+<div id="manualForm" style="display:none; margin-top:10px;">
+  <h3>Add Product Manually</h3>
+  <input id="m_name" placeholder="Product name"><br><br>
+  <input id="m_brand" placeholder="Brand"><br><br>
+  <input id="m_category" placeholder="Category"><br><br>
+  <input id="m_size" placeholder="Package size"><br><br>
+<br><br>
+
+<input id="qty" placeholder="Quantity" value="1"><br><br>
+
+<input id="price" placeholder="Unit price"><br><br>
+
+<button onclick="addToPurchase()">Add To Purchase</button>
+
+<br><br>
+
+
+
+  <button onclick="saveManual()">Save Product</button>
+</div>
+
+
+  <script>
+    // IMPORTANT:
+    // Replace this with your HTTPS backend tunnel URL when using the phone.
+    // Example:
+    // const API_BASE = "https://your-backend-tunnel-url";
+    const API_BASE = window.location.origin;
+
+    const resultBox = document.getElementById("result");
+    const productBox = document.getElementById("productInfo");
+    const purchaseItemsBox = document.getElementById("purchaseItems");
+
+    let lastScanned = "";
+    let currentBarcode = "";
+    let currentPurchaseId = null;
+    let scanner;
+
+    function showResult(text, cls = "") {
+      resultBox.className = cls;
+      resultBox.innerText = text;
+    }
+
+    function showProduct(data) {
+      productBox.innerHTML = `
+        <strong>Barcode:</strong> ${data.barcode || ""}<br>
+        <strong>Name:</strong> ${data.product_name || ""}<br>
+        <strong>Brand:</strong> ${data.brand || ""}<br>
+        <strong>Category:</strong> ${data.category || ""}<br>
+        <strong>Package size:</strong> ${data.package_size || ""}
+      `;
+    }
+
+    async function lookupBarcode(barcode) {
+      try {
+        showResult("Barcode detected: " + barcode, "ok");
+
+        const res = await fetch(`${API_BASE}/lookup/${barcode}`);
+        const data = await res.json();
+
+
+        if (data.found) {
+             showProduct(data);
+
+             // Show manual form even when found
+             document.getElementById("manualForm").style.display = "block";
+
+             // Pre-fill fields with existing data
+             document.getElementById("m_name").value = data.product_name || "";
+             document.getElementById("m_brand").value = data.brand || "";
+             document.getElementById("m_category").value = data.category || "";
+             document.getElementById("m_size").value = data.package_size || "";
+
+       } else {
+           productBox.innerText = "Product not found.";
+           document.getElementById("manualForm").style.display = "block";
+       }
+                
+
+
+      } catch (err) {
+        showResult("Error contacting backend", "err");
+        productBox.innerText = String(err);
+      }
+    }
+
+    async function onScanSuccess(decodedText) {
+  if (decodedText === lastScanned) return;
+  lastScanned = decodedText;
+  currentBarcode = decodedText;
+
+  showResult("Scanned: " + decodedText + " — looking up product...", "ok");
+
+  try {
+    if (scanner) {
+      await scanner.clear();   // stop scanning immediately
+    }
+  } catch (e) {
+    console.log("Scanner stop warning:", e);
+  }
+
+  await lookupBarcode(decodedText);
+}
+
+
+async function addToPurchase() {
+
+  if (!currentPurchaseId) {
+    showResult("Start a purchase first", "err");
+    return;
+  }
+
+  if (!currentBarcode) {
+    showResult("Lookup or scan a barcode first", "err");
+    return;
+  }
+
+  const qty = document.getElementById("qty").value;
+  const price = document.getElementById("price").value;
+
+  const name = document.getElementById("m_name").value;
+  const brand = document.getElementById("m_brand").value;
+  const category = document.getElementById("m_category").value;
+  const size = document.getElementById("m_size").value;
+
+  if (!price) {
+    showResult("Enter unit price first", "err");
+    return;
+  }
+
+  try {
+    // First save/update the product locally
+    await fetch(`${API_BASE}/manual_product`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        barcode: currentBarcode,
+        product_name: name,
+        brand: brand,
+        category: category,
+        package_size: size
+      })
+    });
+
+    // Then add it to the active purchase
+    const res = await fetch(`${API_BASE}/add_purchase_item`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        purchase_id: currentPurchaseId,
+        barcode: currentBarcode,
+        quantity: qty,
+        unit_price: price,
+        entry_method: "MANUAL"
+      })
+    });
+
+    const data = await res.json();
+
+    if (data.added) {
+      showResult("Item added to purchase!", "ok");
+      await loadPurchase();
+
+      document.getElementById("qty").value = "1";
+      document.getElementById("price").value = "";
+      document.getElementById("manualBarcode").value = "";
+      document.getElementById("manualBarcode").focus();
+
+      productBox.innerHTML = "Ready for next scan.";
+
+      document.getElementById("m_name").value = "";
+      document.getElementById("m_brand").value = "";
+      document.getElementById("m_category").value = "";
+      document.getElementById("m_size").value = "";
+
+      document.getElementById("manualForm").style.display = "none";
+
+    } else {
+      showResult("Error adding item", "err");
+      productBox.innerText = data.error || "Unknown error";
+    }
+
+  } catch (err) {
+    showResult("Backend error adding item", "err");
+    productBox.innerText = String(err);
+  }
+}
+
+
+    function onScanFailure(error) {
+      // ignore frequent decode errors during live scanning
+    }
+
+    scanner = new Html5QrcodeScanner(
+      "reader",
+      {
+        fps: 10,
+        qrbox: { width: 280, height: 120 },   // better shape for 1D barcodes
+        aspectRatio: 1.7778,
+        rememberLastUsedCamera: true,
+        supportedScanTypes: [Html5QrcodeScanType.SCAN_TYPE_CAMERA]
+      },
+      false
+    );
+
+    scanner.render(onScanSuccess, onScanFailure);
+
+   async function saveManual() {
+    const barcode = currentBarcode;
+    const name = document.getElementById("m_name").value;
+    const brand = document.getElementById("m_brand").value;
+    const category = document.getElementById("m_category").value;
+    const size = document.getElementById("m_size").value;
+
+    try {
+        const res = await fetch(`${API_BASE}/manual_product`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                barcode: barcode,
+                product_name: name,
+                brand: brand,
+                category: category,
+                package_size: size
+            })
+        });
+
+        const data = await res.json();
+
+        showResult("Product saved!", "ok");
+        document.getElementById("manualForm").style.display = "none";
+        productBox.innerText = "Product added successfully.";
+
+    } catch (err) {
+        showResult("Error saving product", "err");
+    }
+}
+
+async function lookupManualBarcode() {
+  const barcode = document.getElementById("manualBarcode").value.trim();
+
+  if (!barcode) {
+    showResult("Please enter a barcode.", "err");
+    return;
+  }
+
+  currentBarcode = barcode;
+  lastScanned = barcode;
+
+  showResult("Manual barcode entered: " + barcode, "ok");
+
+  await lookupBarcode(barcode);
+}
+
+async function startPurchase() {
+  const storeId = document.getElementById("store_id").value;
+  const receiptNumber = document.getElementById("receipt_number").value;
+
+  try {
+    const res = await fetch(`${API_BASE}/start_purchase`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        store_id: storeId,
+        receipt_number: receiptNumber
+      })
+    });
+
+    const data = await res.json();
+
+    if (data.created) {
+      currentPurchaseId = data.purchase_id;
+
+      document.getElementById("currentPurchaseDisplay").innerText =
+          currentPurchaseId;
+      
+      showResult("Purchase started: " + currentPurchaseId, "ok");
+
+    } else {
+      showResult("Error starting purchase", "err");
+    }
+
+  } catch (err) {
+    showResult("Backend error starting purchase", "err");
+    productBox.innerText = String(err);
+  }
+}
+
+
+async function addNonBarcodeItem() {
+
+    if (!currentPurchaseId) {
+        showResult("Start a purchase first", "err");
+        return;
+    }
+
+    const name = document.getElementById("nb_name").value;
+    const category = document.getElementById("nb_category").value;
+    const quantity = document.getElementById("nb_qty").value;
+    const unitPrice = document.getElementById("nb_price").value;
+
+    if (!name || !unitPrice) {
+        showResult("Name and price required", "err");
+        return;
+    }
+
+    try {
+
+        const res = await fetch(`${API_BASE}/add_manual_purchase_item`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                purchase_id: currentPurchaseId,
+                product_name: name,
+                category: category,
+                quantity: quantity,
+                unit_price: unitPrice
+            })
+        });
+
+        const data = await res.json();
+
+        if (data.added) {
+
+            showResult("Non-barcode item added!", "ok");
+
+            document.getElementById("nb_name").value = "";
+            document.getElementById("nb_category").value = "";
+            document.getElementById("nb_qty").value = "1";
+            document.getElementById("nb_price").value = "";
+
+            await loadPurchase();
+
+        } else {
+
+            showResult("Error adding item", "err");
+            productBox.innerText = data.error;
+
+        }
+
+    } catch (err) {
+
+        showResult("Backend error", "err");
+        productBox.innerText = String(err);
+
+    }
+
+}
+
+
+
+
+async function loadPurchase() {
+  if (!currentPurchaseId) {
+    purchaseItemsBox.innerText = "No active purchase.";
+    return;
+  }
+
+  try {
+    const res = await fetch(`${API_BASE}/get_purchase/${currentPurchaseId}`);
+    const data = await res.json();
+
+    if (!data.found) {
+      purchaseItemsBox.innerText = "Purchase not found.";
+      return;
+    }
+
+    let html = "";
+
+    data.items.forEach(item => {
+      html += `
+        <div style="border-bottom:1px solid #ccc; padding:5px 0;">
+          <strong>${item.product_name}</strong><br>
+          Qty: ${item.quantity} × ${item.unit_price} = ${item.subtotal}
+        </div>
+      `;
+    });
+
+    html += `
+      <h3>Total: ${data.purchase.total_amount}</h3>
+    `;
+
+    purchaseItemsBox.innerHTML = html;
+
+  } catch (err) {
+    purchaseItemsBox.innerText = "Error loading purchase.";
+    console.log(err);
+  }
+}
+
+
+async function finishPurchase() {
+  if (!currentPurchaseId) {
+    showResult("No active purchase to finish", "err");
+    return;
+  }
+
+  try {
+    const finishedId = currentPurchaseId;
+
+    const res = await fetch(`${API_BASE}/finish_purchase/${finishedId}`, {
+      method: "POST"
+    });
+
+    const data = await res.json();
+
+    if (data.finished) {
+      showResult("Purchase finished: " + finishedId, "ok");
+
+      currentPurchaseId = null;
+      document.getElementById("currentPurchaseDisplay").innerText = "None";
+
+      purchaseItemsBox.innerHTML = "No items yet.";
+      productBox.innerHTML = "No product loaded yet.";
+
+      document.getElementById("manualBarcode").value = "";
+      document.getElementById("manualBarcode").focus();
+
+      document.getElementById("qty").value = "1";
+      document.getElementById("price").value = "";
+
+      document.getElementById("manualForm").style.display = "none";
+    } else {
+      showResult("Error finishing purchase", "err");
+    }
+
+  } catch (err) {
+    showResult("Backend error finishing purchase", "err");
+    productBox.innerText = String(err);
+  }
+}
+
+function handleBarcodeKey(event) {
+  if (event.key === "Enter") {
+    lookupManualBarcode();
+  }
+}
+
+
+
+
+
+
+  </script>
+</body>
+</html>
