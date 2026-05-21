@@ -47,3 +47,34 @@ Mobile / Browser Scanner
 - Learned the importance of separating code from credentials.
 - Practiced Git and GitHub version control for project documentation.
 - Identified future expansion areas such as purchasing, supplier management, and inventory movement history.
+
+
+## Screenshots
+
+### Scanner Interface
+
+![Scanner Interface](screenshots/scanner-interface.png)
+
+### Mobile Scanner Interface
+
+![Mobile Scanner Interface](screenshots/scanner-interface-mobile.jpeg)
+
+### Backend API Running
+
+![Backend API](screenshots/backend-running.png)
+
+### MySQL Purchase Table
+
+![MySQL Purchase Table](screenshots/mysql-purchase-id.png)
+
+### MySQL Select Table
+
+![MySQL Select Table](screenshots/mysql-select-table.png)
+
+### MySQL Scanner Register
+
+![MySQL Scanner Register](screenshots/mysql-scanner-register.png)
+
+### MySQL Category Table
+
+![MySQL Category Table](screenshots/mysql-category-table.png)
