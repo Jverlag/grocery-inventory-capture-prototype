@@ -37,3 +37,13 @@ Mobile / Browser Scanner
 - Inventory movement history
 - Analytics dashboard
 - User authentication
+
+
+## Lessons Learned
+
+- Built a basic barcode-based inventory capture workflow.
+- Connected a browser/mobile scanning interface to a Flask backend.
+- Stored product information in a MySQL database.
+- Learned the importance of separating code from credentials.
+- Practiced Git and GitHub version control for project documentation.
+- Identified future expansion areas such as purchasing, supplier management, and inventory movement history.
