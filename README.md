@@ -79,4 +79,4 @@ Mobile / Browser Scanner
 
 ![MySQL Category Table](screenshots/mysql-category-table.png)
 
-Practice brach created during Kali Day 19 
+ 
